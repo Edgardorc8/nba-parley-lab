@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <title>NBA Parley Lab</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --txt: #e2e8f0;
+      --mut: #94a3b8;
+      --ok: #10b981;
+      --warn: #f59e0b;
+      --bad: #ef4444;
+      --acc: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Segoe UI, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--txt);
+    }
+
+    header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 14px 22px;
+      background: #1b365d;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 18px;
+      margin: 0 10px 0 0;
+    }
+
+    button,
+    input {
+      background: #0b2545;
+      color: var(--txt);
+      border: 1px solid #335;
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--acc);
+    }
+
+    nav button.on {
+      background: var(--acc);
+      color: #000;
+      font-weight: 600;
+    }
+
+    main {
+      padding: 18px 22px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .mut {
+      color: var(--mut);
+      font-size: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 14px;
+    }
+
+    .grid3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 15px;
+      border-left: 5px solid var(--ok);
+    }
+
+    .card.hero {
+      border-left: 5px solid var(--acc);
+      background: linear-gradient(135deg, #1e293b, #172554);
+    }
+
+    .card.q {
+      border-left-color: var(--bad);
+    }
+
+    .card.w {
+      border-left-color: var(--warn);
+    }
+
+    .card h2,
+    .card h3 {
+      margin: 0 0 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card h2 {
+      font-size: 17px;
+    }
+
+    .card h3 {
+      font-size: 15px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      margin-top: 8px;
+    }
+
+    th,
+    td {
+      padding: 6px 7px;
+      border-bottom: 1px solid #334155;
+      text-align: left;
+    }
+
+    th {
+      color: var(--mut);
+      font-weight: 600;
+    }
+
+    .tag {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+
+    .ok {
+      background: #064e3b;
+      color: #6ee7b7;
+    }
+
+    .warn {
+      background: #78350f;
+      color: #fcd34d;
+    }
+
+    .bad {
+      background: #7f1d1d;
+      color: #fca5a5;
+    }
+
+    .pos {
+      color: #6ee7b7;
+      font-weight: 600;
+    }
+
+    .neg {
+      color: #fca5a5;
+    }
+
+    .logo {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      vertical-align: middle;
+      margin: 0 3px;
+    }
+
+    .match {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .kpi {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #334155;
+    }
+
+    .kpi div b {
+      font-size: 18px;
+      display: block;
+    }
+
+    .filtros {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filtros button.on {
+      background: var(--acc);
+      color: #000;
+    }
+
+    #cuotas input {
+      width: 70px;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>🏀 NBA Parley Lab</h1>
+  <input type="date" id="fecha">
+  <button onclick="cargar(true)">⟳ Actualizar</button>
+  <button onclick="location='/api/excel?fecha='+fecha.value">⬇ Excel</button>
+  <nav>
+    <button data-v="apostar" class="on">🎯 Qué Apostar Hoy</button>
+    <button data-v="ranking">🏆 Ranking Completo</button>
+    <button data-v="jornada">📋 Partidos</button>
+    <button data-v="props">⛹️ Player Props</button>
+    <button data-v="parley">🎟️ Mi Parley</button>
+    <button data-v="lesiones">🏥 Lesiones</button>
+    <button data-v="historial">📊 Historial & ROI</button>
+    <button data-v="cuotas">⚙️ Ajustar cuotas (opcional)</button>
+  </nav>
+  <span class="mut" id="estado"></span>
+</header>
+<main>
+  <section id="apostar"></section>
+  <section id="ranking" class="hidden"></section>
+  <section id="jornada" class="grid hidden"></section>
+  <section id="props" class="hidden"></section>
+  <section id="parley" class="hidden"></section>
+  <section id="lesiones" class="hidden"></section>
+  <section id="historial" class="hidden"></section>
+  <section id="cuotas" class="hidden"></section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const pct = x => (x*100).toFixed(1)+'%';
+const bloq = s => s.includes('BLOQUEADO') || s.includes('CUARENTENA');
+const mLogo = g => `<span class="match">${g.away.logo ? `<img class="logo" src="${g.away.logo}" alt="${g.away.abbr}">` : ''}<b>${g.away.abbr}</b> <span class="mut">@</span> ${g.home.logo ? `<img class="logo" src="${g.home.logo}" alt="${g.home.abbr}">` : ''}<b>${g.home.abbr}</b></span>`;
+const tag = s => `<span class="tag ${bloq(s)?'bad':s.startsWith('LUZ')?'ok':'warn'}">${s}</span>`;
+let D = null, picks = new Set(), filtro = 'TODOS', propTab = 'GENERAL';
+fecha.value = new Date(Date.now()-4*3600e3).toISOString().slice(0,10);
+fecha.onchange = () => cargar(false);
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x===b));
+  document.querySelectorAll('main section').forEach(s => s.classList.toggle('hidden', s.id!==b.dataset.v));
+  if (b.dataset.v === 'historial') cargarHistorial(false);
+});
+
+    async function cargar(ref) {
+      estado.textContent = 'Descargando cuotas (DraftKings), lesiones y estadísticas...';
+      const r = await fetch(`/api/jornada?fecha=${fecha.value}&refrescar=${ref}`);
+      D = await r.json();
+      estado.textContent = `Actualizado ${D.actualizado} VET · ${D.partidos.length} partidos · Cuotas ref. DraftKings`;
+      pintar();
+    }
+
+    function pintar() {
+      const P = D.partidos;
+      const todas = P.flatMap(a => a.sel.map(s => ({ a, s, id: a.g.partido + '|' + s.tipo })));
+      todas.sort((x, y) => (bloq(x.s.estado) - bloq(y.s.estado)) || (y.s.prob - x.s.prob));
+
+      // --- 1. QUÉ APOSTAR HOY (Parley automático + Top por categoría) ---
+      const eleg = todas.filter(x => !bloq(x.s.estado));
+      const autoParley = [], usados = new Set();
+      for (const x of eleg) {
+        if (!usados.has(x.a.g.partido) && autoParley.length < 4) {
+          autoParley.push(x); usados.add(x.a.g.partido);
+        }
+      }
+      const pComb = autoParley.reduce((p, x) => p * x.s.prob, 1);
+      const cComb = autoParley.reduce((c, x) => c * x.s.cuota, 1);
+
+      const topCat = (tipo, titulo, icono) => {
+        const lista = todas.filter(x => x.s.tipo === tipo && !bloq(x.s.estado)).slice(0, 4);
+        return `<div class="card"><h3>${icono} ${titulo}</h3>${lista.length ? `<table>
+      <tr><th>#</th><th>Partido</th><th>Selección</th><th>Cuota</th><th>Prob.</th></tr>
+      ${lista.map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${mLogo(x.a.g)}<div class="mut">${x.a.g.hora}</div></td>
+        <td><b>${x.s.seleccion}</b></td><td>${x.s.cuota.toFixed(2)}</td><td class="pos">${pct(x.s.prob)}</td></tr>`).join('')}
+      </table>` : '<p class="mut">Sin selecciones limpias hoy en esta categoría.</p>'}</div>`;
+      };
+
+      const gtdGames = P.filter(a => a.cuarentena);
+      $('#apostar').innerHTML = `
+    <div class="card hero">
+      <h2>🎯 Parley Sugerido Hoy (Automático · Máx. 1 pata por partido) <span class="tag ok">${autoParley.length} patas limpias</span></h2>
+      <p class="mut">Selecciones sin cuarentena GTD ni bloqueos, ordenadas por mayor probabilidad real. Cuotas de referencia automáticas (DraftKings / mercado US).</p>
+      ${autoParley.length ? `<table>
+        <tr><th>#</th><th>Hora VET</th><th>Partido</th><th>Mercado</th><th>Apostar</th><th>Cuota ref.</th><th>Prob. Real</th><th>Estado</th></tr>
+        ${autoParley.map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${x.a.g.hora}</td><td>${mLogo(x.a.g)}</td>
+          <td>${x.s.tipo}</td><td><b>${x.s.seleccion}</b></td><td>${x.s.cuota.toFixed(2)}</td>
+          <td class="pos">${pct(x.s.prob)}</td><td>${tag(x.s.estado)}</td></tr>`).join('')}
+      </table>
+      <div class="kpi">
+        <div><span class="mut">Cuota combinada</span><b>${cComb.toFixed(2)}</b></div>
+        <div><span class="mut">Prob. conjunta real</span><b class="pos">${pct(pComb)}</b></div>
+        <div><span class="mut">Exigencia cuota</span><b>${pct(1 / cComb)}</b></div>
+      </div>` : '<p class="mut">Hoy no hay partidos con luz verde todavía. Revisa la cuarentena GTD 30 min antes de cada juego.</p>'}
+    </div>
+    <div class="grid3">
+      ${topCat('Ganador (P+)', 'Top Ganador (P+)', '🏆')}
+      ${topCat('Total Alt. UNDER', 'Top Under Protegido (+7.5)', '🛡️')}
+      ${topCat('Total Alt. OVER', 'Top Over Protegido (-7.5)', '🔥')}
+    </div>
+    ${gtdGames.length ? `<div class="card q" style="margin-top:16px">
+      <h3>⚠️ Partidos en Cuarentena GTD (esperar confirmación 30 min antes)</h3>
+      <table><tr><th>Hora VET</th><th>Partido</th><th>Jugadores en duda (titulares / 24+ min)</th><th>Modelo 65/35</th></tr>
+      ${gtdGames.map(a => `<tr><td>${a.g.hora}</td><td><b>${a.g.partido}</b></td>
+        <td>${a.gtd.map(x => `${x.jugador} (${x.mpg}m)`).join(', ')}</td>
+        <td>${a.proy.total.toFixed(2)} vs línea ${a.g.dk.total}</td></tr>`).join('')}</table></div>` : ''}`;
+
+      // --- 2. RANKING COMPLETO ---
+      pintarRanking(todas);
+
+      // --- 3. PARTIDOS ---
+      $('#jornada').innerHTML = P.length ? P.map(a => {
+        const g = a.g, p = a.proy, dk = g.dk;
+        const cls = a.cuarentena ? 'q' : (Math.abs(a.disc_margen) > 5 ? 'w' : '');
+        return `<div class="card ${cls}">
+      <h3><span>${mLogo(g)}</span><span class="mut">${g.hora} VET</span></h3>
+      <div class="mut">${g.away.abbr} ${g.away.record} · ${g.home.abbr} ${g.home.record} ·
+        Spread ${dk.spread_home} · Total ${dk.total_open ?? ''}→${dk.total} · ML ${dk.ml_away}/${dk.ml_home}</div>
+      <div style="margin-top:6px">Modelo: <b>${p.cal_a.toFixed(2)} – ${p.cal_h.toFixed(2)}</b> = <b>${p.total.toFixed(2)}</b>
+        <span class="mut">(L5 ${p.l5_total.toFixed(2)}, margen ${p.margen > 0 ? '+' : ''}${p.margen}, σ=${p.sigma})</span></div>
+      <div class="mut" style="margin-top:3px">
+        ${a.descanso?.b2b_a ? `<span class="tag bad">${g.away.abbr} B2B</span> ` : ''}
+        ${a.descanso?.b2b_h ? `<span class="tag bad">${g.home.abbr} B2B</span> ` : ''}
+        ${(a.steam || []).map(st => `<span class="tag warn">${st}</span> `).join('')}
+        ${p.out_pen_a ? `Bajas OUT ${g.away.abbr}: -${p.out_pen_a} pts · ` : ''}
+        ${p.out_pen_h ? `Bajas OUT ${g.home.abbr}: -${p.out_pen_h} pts` : ''}
+      </div>
+      <table><tr><th>Mercado</th><th>Selección</th><th>Cuota</th><th>Prob.</th><th>Ventaja</th></tr>
+      ${a.sel.map(s => `<tr><td>${s.tipo}</td><td>${s.seleccion}${s.prob_novig ? `<div class="mut">Mercado sin vig: ${pct(s.prob_novig)} (vig ${(s.vig * 100).toFixed(1)}%)</div>` : ''}</td><td>${s.cuota.toFixed(2)}</td>
+        <td>${pct(s.prob)}</td><td class="${s.ventaja > 0 ? 'pos' : 'neg'}">${(s.ventaja * 100).toFixed(1)}%</td></tr>
+        <tr><td colspan="5">${tag(s.estado)}</td></tr>`).join('')}</table>
+      <details style="margin-top:8px"><summary class="mut" style="cursor:pointer">🔍 Auditoría 4 Frentes + Z-Score Doble Escenario</summary>
+        <table><tr><th>Métrica</th><th>${g.away.abbr}</th><th>${g.home.abbr}</th></tr>
+        <tr><td>1. Pintura / Opp eFG%</td><td>${(a.sa.opp_efg * 100).toFixed(1)}%</td><td>${(a.sh.opp_efg * 100).toFixed(1)}%</td></tr>
+        <tr><td>2. Perímetro / Opp 3P%</td><td>${(a.sa.opp_3p * 100).toFixed(1)}%</td><td>${(a.sh.opp_3p * 100).toFixed(1)}%</td></tr>
+        <tr><td>3. Rebote (DREB%) / TOV%</td><td>${a.sa.drb}% / ${a.sa.tov}%</td><td>${a.sh.drb}% / ${a.sh.tov}%</td></tr>
+        <tr><td>4. Tiros Libres (FTA / Opp FTA)</td><td>${a.sa.fta} / ${a.sa.opp_fta}</td><td>${a.sh.fta} / ${a.sh.opp_fta}</td></tr>
+        </table>
+        <table><tr><th>Total Alt.</th><th>Δ1 / Δ2</th><th>Z1 / Z2</th><th>Esc.1 / Esc.2</th><th>Ajuste</th></tr>
+        ${a.sel.filter(s => s.tipo.startsWith('Total')).map(s => `<tr><td>${s.seleccion}</td><td>${s.d1} / ${s.d2}</td>
+          <td>${s.z1} / ${s.z2}</td><td>${pct(s.p1)} / ${pct(s.p2)}</td><td>${(s.adj * 100).toFixed(1)}% (${s.motivo})</td></tr>`).join('')}
+        </table>
+      </details></div>`;
+      }).join('') : '<p>No hay partidos ese día.</p>';
+
+  // --- 3b. PLAYER PROPS PROTEGIDOS (Top 10 General + Pestañas por categoría) ---
+  pintarProps(P);
+
+      // --- 4. LESIONES ---
+      $('#lesiones').innerHTML = `<table><tr><th>Partido</th><th>Jugador</th><th>Estado</th><th>Min/j</th><th>Detalle</th></tr>
+    ${P.flatMap(a => [...a.gtd.map(x => [a, x, 'GTD CLAVE', 'bad']), ...a.out.map(x => [a, x, 'OUT', 'warn']), ...a.gtd_menor.map(x => [a, x, 'GTD menor', 'ok'])])
+          .map(([a, x, e, c]) => `<tr><td>${a.g.partido}</td><td>${x.jugador}</td><td><span class="tag ${c}">${e} · ${x.estado}</span></td><td>${x.mpg}</td><td class="mut">${x.detalle}</td></tr>`).join('')}</table>`;
+      parley(todas);
+      cuotas();
+    }
+
+function pintarProps(P) {
+  const all = P.flatMap(a => a.props || []).sort((x,y) => (x.cuarentena-y.cuarentena) || (y.prob-x.prob));
+  let lista = [];
+  if (propTab === 'GENERAL') {
+    const vistos = new Set();
+    for (const p of all) {
+      if (!vistos.has(p.jugador)) { lista.push(p); vistos.add(p.jugador); }
+      if (lista.length >= 10) break;
+    }
+  } else {
+    lista = all.filter(p => p.cat === propTab).slice(0, 10);
+  }
+  const tabs = [['GENERAL','⭐ Top 10 General'],['PUNTOS','🏀 Puntos'],['REBOTES','🧲 Rebotes'],
+                ['ASISTENCIAS','🎯 Asistencias'],['PRA','🔥 PRA'],['R+A','⚡ Reb + Ast']];
+  $('#props').innerHTML = `<div class="card hero">
+    <h2>⛹️ Player Props Protegidos — Ranking Top 10</h2>
+    <p class="mut">Jugadores sanos con 28+ min/j. En partidos con paliza proyectada (spread ≥ 11.5) se bloquean Puntos y PRA (Filtro Anti-Garbage Time).</p>
+    <div class="filtros" style="margin-top:10px">${tabs.map(([k,lbl]) =>
+      `<button class="${propTab===k?'on':''}" onclick="propTab='${k}';pintarProps(D.partidos)">${lbl}</button>`).join('')}</div>
+    ${lista.length ? `<table><tr><th>#</th><th>Parley</th><th>Hora</th><th>Partido</th><th>Jugador</th><th>Categoría</th><th>Selección</th><th>Promedio</th><th>Prob. Est.</th><th>Filtro</th><th>Estado</th></tr>
+    ${lista.map((p,i) => {
+      const pid = `PROP|${p.partido}|${p.jugador}|${p.cat}`;
+      return `<tr><td><b>${i+1}</b></td>
+      <td><input type="checkbox" class="prop-chk" data-id="${pid}" ${picks.has(pid)?'checked':''}></td>
+      <td>${p.hora}</td><td><b>${p.partido}</b></td>
+      <td><b>${p.jugador}</b> (${p.equipo})</td><td><span class="tag">${p.cat}</span></td><td><b>${p.prop}</b></td><td>${p.promedio}</td>
+      <td class="pos">${pct(p.prob)}</td><td class="mut">${p.filtro}</td>
+      <td>${p.cuarentena?'<span class="tag warn">REVISAR GTD</span>':'<span class="tag ok">LUZ VERDE</span>'}</td></tr>`;
+    }).join('')}</table>`
+    : '<p class="mut">Sin props elegibles hoy en esta categoría (revisa el filtro anti-paliza).</p>'}</div>`;
+  document.querySelectorAll('.prop-chk').forEach(c => c.onchange = () => {
+    const jug = c.dataset.id.split('|')[2];
+    if (c.checked) {
+      if ([...picks].some(x => x.startsWith('PROP|') && x.split('|')[2] === jug)) { alert('Máximo 1 prop por jugador.'); c.checked = false; return; }
+      if (picks.size >= 4) { alert('Máximo 4 patas en el ticket.'); c.checked = false; return; }
+      picks.add(c.dataset.id);
+    } else picks.delete(c.dataset.id);
+    const todas = D.partidos.flatMap(a => a.sel.map(s => ({a, s, id: a.g.partido+'|'+s.tipo})));
+    parley(todas);
+  });
+}
+
+    function pintarRanking(todas) {
+      const fil = filtro === 'TODOS' ? todas : todas.filter(x => x.s.tipo === filtro);
+      $('#ranking').innerHTML = `<div class="filtros">
+    ${['TODOS', 'Ganador (P+)', 'Total Alt. UNDER', 'Total Alt. OVER'].map(f =>
+        `<button class="${filtro === f ? 'on' : ''}" onclick="filtro='${f}';pintar()">${f}</button>`).join('')}
+  </div>
+  <table><tr><th>#</th><th>Parley</th><th>Hora</th><th>Partido</th><th>Mercado</th><th>Selección</th><th>Cuota</th><th>Prob. real</th><th>Implícita</th><th>Ventaja</th><th>Estado</th></tr>
+  ${fil.map(({ a, s, id }, i) => `<tr><td><b>${i + 1}</b></td>
+    <td>${bloq(s.estado) ? '' : `<input type="checkbox" data-id="${id}" ${picks.has(id) ? 'checked' : ''}>`}</td>
+    <td>${a.g.hora}</td><td>${mLogo(a.g)}</td><td>${s.tipo}</td><td><b>${s.seleccion}</b></td><td>${s.cuota.toFixed(2)}</td>
+    <td class="pos">${pct(s.prob)}</td><td>${pct(s.implicita)}</td><td class="${s.ventaja > 0 ? 'pos' : 'neg'}">${(s.ventaja * 100).toFixed(1)}%</td><td>${tag(s.estado)}</td></tr>`).join('')}</table>`;
+      document.querySelectorAll('#ranking input').forEach(c => c.onchange = () => {
+        const part = c.dataset.id.split('|')[0];
+        if (c.checked) {
+          if ([...picks].some(p => p.split('|')[0] === part)) { alert('Máximo 1 pata por partido.'); c.checked = false; return; }
+          if (picks.size >= 4) { alert('Máximo 4 patas.'); c.checked = false; return; }
+          picks.add(c.dataset.id);
+        } else picks.delete(c.dataset.id);
+        parley(todas);
+      });
+    }
+
+    function parley(todas) {
+      const selJuegos = todas.filter(t => picks.has(t.id)).map(t => ({
+        id: t.id, match: mLogo(t.a.g), texto: t.s.seleccion, cuota: t.s.cuota, prob: t.s.prob
+      }));
+      const selProps = (D?.partidos || []).flatMap(a => (a.props || []).map(p => ({
+        id: `PROP|${p.partido}|${p.jugador}|${p.cat}`,
+        match: mLogo(a.g), texto: `⛹️ ${p.jugador}: ${p.prop}`, cuota: p.cuota, prob: p.prob
+      }))).filter(x => picks.has(x.id));
+      const sel = [...selJuegos, ...selProps];
+      const prob = sel.reduce((p, t) => p * t.prob, 1), cuota = sel.reduce((c, t) => c * t.cuota, 1);
+      const bk = parseFloat(localStorage.getItem('nba_bankroll') || '100');
+      const b = cuota - 1;
+      const kellyFull = (sel.length && b > 0) ? ((b * prob - (1 - prob)) / b) : 0;
+      const kellyQ = Math.max(0, Math.min(0.05, kellyFull * 0.25)); // ¼ Kelly con tope de seguridad 5%
+      const stakeKelly = bk * kellyQ;
+      const stake1u = bk * 0.01;
+      const ev = prob - (1 / cuota);
+
+      const calcHTML = `<div class="card" style="margin-top:14px">
+        <h3>💰 Calculadora de Bankroll & ¼ Kelly (Gestión Profesional)</h3>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px">
+          <label class="mut">Tu Bankroll total ($):
+            <input type="number" id="bkInput" value="${bk}" min="1" step="10" style="width:100px;margin-left:6px"
+              onchange="localStorage.setItem('nba_bankroll', this.value); pintar();">
+          </label>
+          <span class="mut">1 unidad estándar (1%) = <b>$${stake1u.toFixed(2)}</b></span>
+        </div>
+        ${sel.length ? `<div class="kpi">
+          <div><span class="mut">Ventaja (+EV)</span><b class="${ev > 0 ? 'pos' : 'neg'}">${(ev * 100).toFixed(1)}%</b></div>
+          <div><span class="mut">Stake ¼ Kelly</span><b class="${kellyQ > 0 ? 'pos' : 'neg'}">${kellyQ > 0 ? '$' + stakeKelly.toFixed(2) + ' (' + (kellyQ * 100).toFixed(2) + '%)' : '$0.00 (NO BET)'}</b></div>
+          <div><span class="mut">Retorno potencial (¼ Kelly)</span><b>$${(stakeKelly * cuota).toFixed(2)}</b></div>
+          <div><span class="mut">Dictamen</span><b>${ev > 0 ? '<span class="tag ok">APOSTAR</span>' : '<span class="tag bad">NO BET (sin +EV)</span>'}</b></div>
+        </div>` : '<p class="mut" style="margin-top:8px">Marca de 1 a 4 selecciones en "🏆 Ranking Completo" para calcular el stake exacto.</p>'}
+      </div>`;
+
+      $('#parley').innerHTML = (sel.length ? `<div class="card hero"><h3><span>Mi Ticket Personalizado (${sel.length} patas)</span>
+        <button onclick="picks.clear();pintar()">🗑️ Limpiar</button></h3>
+        <table>${sel.map(t => `<tr><td>${t.match}</td><td><b>${t.texto}</b></td><td>${t.cuota.toFixed(2)}</td><td class="pos">${pct(t.prob)}</td>
+        <td><button onclick="picks.delete('${t.id.replace(/'/g,"\\'")}');pintar()">✕</button></td></tr>`).join('')}</table>
+        <div class="kpi"><div><span class="mut">Cuota total</span><b>${cuota.toFixed(2)}</b></div>
+        <div><span class="mut">Prob. conjunta</span><b class="pos">${pct(prob)}</b></div>
+        <div><span class="mut">Implícita</span><b>${pct(1 / cuota)}</b></div></div></div>`
+        : '<p class="mut">Marca selecciones en "🏆 Ranking Completo" o en "⛹️ Player Props" para armar tu ticket.</p>') + calcHTML;
+    }
+
+    async function cuotas() {
+      const c = await (await fetch('/api/cuotas?fecha=' + fecha.value)).json();
+      const campos = ['ml_local', 'ml_visita', 'under_linea', 'under_cuota', 'over_linea', 'over_cuota'];
+      $('#cuotas').innerHTML = `<p class="mut">Opcional: solo úsalo si quieres reemplazar alguna cuota de DraftKings por la exacta de TriunfoBet.</p>
+    <table><tr><th>Partido</th>${campos.map(k => `<th>${k}</th>`).join('')}</tr>
+    ${D.partidos.map(a => `<tr><td>${a.g.partido}</td>${campos.map(k => `<td><input data-p="${a.g.partido}" data-k="${k}" value="${(c[a.g.partido] || {})[k] ?? ''}"></td>`).join('')}</tr>`).join('')}</table>
+    <p><button onclick="guardar()">💾 Guardar y recalcular</button></p>`;
+    }
+
+    async function guardar() {
+      const datos = {};
+      document.querySelectorAll('#cuotas input').forEach(i => {
+        datos[i.dataset.p] = datos[i.dataset.p] || {};
+        if (i.value.trim()) datos[i.dataset.p][i.dataset.k] = i.value.trim();
+      });
+      await fetch('/api/cuotas?fecha=' + fecha.value, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos) });
+      cargar(false);
+    }
+
+    async function cargarHistorial(verif) {
+      const h = await (await fetch('/api/historial?verificar=' + verif)).json();
+      const cRes = r => r === 'GANADA' ? 'ok' : r === 'PERDIDA' ? 'bad' : 'warn';
+      $('#historial').innerHTML = `<div class="card hero">
+    <h2>📊 Historial & Backtesting Automático <button onclick="cargarHistorial(true)">⟳ Verificar resultados en ESPN</button></h2>
+    <div class="kpi">
+      <div><span class="mut">Total registradas</span><b>${h.total}</b></div>
+      <div><span class="mut">Ganadas / Perdidas</span><b>${h.ganadas} / ${h.perdidas}</b></div>
+      <div><span class="mut">Pendientes</span><b>${h.pendientes}</b></div>
+      <div><span class="mut">% Acierto real</span><b class="pos">${h.acierto != null ? pct(h.acierto) : '—'}</b></div>
+      <div><span class="mut">ROI (1u fija)</span><b class="${(h.roi || 0) >= 0 ? 'pos' : 'neg'}">${h.roi != null ? (h.roi * 100).toFixed(1) + '%' : '—'}</b></div>
+      <div><span class="mut">Beneficio</span><b>${h.beneficio_u >= 0 ? '+' : ''}${h.beneficio_u} u</b></div>
+    </div></div>
+    <table style="margin-top:14px"><tr><th>Fecha</th><th>Partido</th><th>Mercado</th><th>Selección</th><th>Cuota</th><th>Prob. Modelo</th><th>Marcador</th><th>Resultado</th></tr>
+    ${h.picks.map(r => `<tr><td>${r.fecha}</td><td><b>${r.partido}</b></td><td>${r.mercado}</td><td>${r.seleccion}</td>
+      <td>${r.cuota.toFixed(2)}</td><td>${pct(r.prob_real)}</td><td>${r.marcador || '—'}</td>
+      <td><span class="tag ${cRes(r.resultado)}">${r.resultado}</span></td></tr>`).join('')}</table>`;
+    }
+    cargar(false);
+    setInterval(() => cargar(false), 30 * 60e3);
+  </script>
+</body>
+
+</html>

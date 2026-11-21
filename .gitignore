@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+cache/
+reportes/
+entrada/
+historial.db
+.env
