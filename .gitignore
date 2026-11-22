@@ -5,3 +5,5 @@ reportes/
 entrada/
 historial.db
 .env
+*.db-wal
+*.db-shm

@@ -4,6 +4,7 @@ Uso:  python main.py            (hoy, hora Venezuela)
 """
 import csv
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -58,6 +59,20 @@ def analizar(fecha, log=print):
     les, stats, mins = F.lesiones(), F.estadisticas(temporada), F.minutos_jugadores(temporada)
     lg = stats.get("League Average")
     casa = leer_cuotas(fecha, juegos)
+
+    # Guardar/restaurar cuotas pre-partido para que ESPN no borre el partido al iniciar
+    odds_file = F.CACHE / f"odds_{fecha:%Y%m%d}.json"
+    saved_odds = json.loads(odds_file.read_text(encoding="utf-8")) if odds_file.exists() else {}
+    changed_odds = False
+    for g in juegos:
+        gid = g["id"]
+        if g["dk"].get("total") is not None:
+            saved_odds[gid] = g["dk"]
+            changed_odds = True
+        elif gid in saved_odds:
+            g["dk"] = saved_odds[gid]
+    if changed_odds:
+        odds_file.write_text(json.dumps(saved_odds), encoding="utf-8")
 
     analisis = []
     for g in juegos:

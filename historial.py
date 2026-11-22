@@ -1,5 +1,6 @@
-"""Historial y Backtesting automático en SQLite (sin dependencias externas)."""
+"""Historial y Backtesting automático en SQLite (Partidos + Player Props verificados vía Boxscore ESPN)."""
 import datetime as dt
+import re
 import sqlite3
 from pathlib import Path
 
@@ -10,8 +11,9 @@ DB = Path(__file__).parent / "historial.db"
 
 
 def _conn():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=15)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
     c.execute("""CREATE TABLE IF NOT EXISTS picks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         fecha TEXT, game_id TEXT, partido TEXT, hora TEXT,
@@ -23,8 +25,13 @@ def _conn():
     return c
 
 
+def _linea_de(texto):
+    m = re.search(r"(\d+(?:\.\d+)?)", str(texto or ""))
+    return float(m.group(1)) if m else None
+
+
 def registrar_jornada(fecha, partidos):
-    """Guarda automáticamente todas las selecciones elegibles (no bloqueadas) del día."""
+    """Guarda automáticamente todas las selecciones elegibles del día (Partidos + Player Props)."""
     with _conn() as c:
         for a in partidos:
             g = a["g"]
@@ -44,10 +51,66 @@ def registrar_jornada(fecha, partidos):
                      s["cuota"], s["prob"], s.get("linea_alt"), g["home"]["nombre"],
                      g["away"]["nombre"], s["estado"]))
 
+            # Guardar también los Player Props sugeridos (Puntos, Rebotes, Asistencias, R+A, PRA)
+            for p in a.get("props", []):
+                if p.get("cuarentena"):
+                    continue
+                mercado = f"Prop {p['cat']} · {p['jugador']}"
+                seleccion = f"{p['jugador']} — {p['prop']}"
+                linea = _linea_de(p["prop"])
+                c.execute("""INSERT INTO picks
+                    (fecha, game_id, partido, hora, mercado, seleccion, cuota, prob_real,
+                     linea_alt, home_nombre, away_nombre, estado)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(fecha, game_id, mercado) DO UPDATE SET
+                      seleccion=excluded.seleccion, cuota=excluded.cuota,
+                      prob_real=excluded.prob_real, linea_alt=excluded.linea_alt
+                    WHERE resultado='PENDIENTE'""",
+                    (str(fecha), g["id"], g["partido"], g["hora"], mercado, seleccion,
+                     p["cuota"], p["prob"], linea, g["home"]["nombre"],
+                     g["away"]["nombre"], "LUZ VERDE"))
+
+
+def _boxscore_stats(game_id):
+    """Descarga el boxscore de ESPN y devuelve {norm(nombre): {PTS, REB, AST}}."""
+    try:
+        sm = F.http(f"{F.ESPN}/summary?event={game_id}", ttl=86400 * 30)
+    except Exception:
+        return {}
+    stats = {}
+    for team_blk in sm.get("boxscore", {}).get("players", []):
+        for cat in team_blk.get("statistics", []):
+            hdrs = [k.upper() for k in (cat.get("labels") or cat.get("names") or cat.get("keys") or [])]
+            if not hdrs:
+                continue
+            def _idx(*cands):
+                for c_name in cands:
+                    if c_name in hdrs:
+                        return hdrs.index(c_name)
+                return None
+            i_pts = _idx("PTS", "POINTS")
+            i_reb = _idx("REB", "REBOUNDS")
+            i_ast = _idx("AST", "ASSISTS")
+            for ath in cat.get("athletes", []):
+                nom = ath.get("athlete", {}).get("displayName", "")
+                vals = ath.get("stats", [])
+                if not nom or not vals:
+                    continue
+                def _v(idx):
+                    if idx is None or idx >= len(vals):
+                        return 0
+                    try:
+                        return int(float(vals[idx]))
+                    except ValueError:
+                        return 0
+                stats[F.norm(nom)] = dict(PTS=_v(i_pts), REB=_v(i_reb), AST=_v(i_ast))
+    return stats
+
 
 def verificar_resultados():
-    """Consulta ESPN para las fechas con picks pendientes y liquida GANADA/PERDIDA/PUSH."""
+    """Consulta ESPN (marcadores + boxscore de jugadores) y liquida GANADA/PERDIDA/PUSH."""
     liquidados = 0
+    box_cache = {}
     with _conn() as c:
         fechas = [r["fecha"] for r in c.execute("SELECT DISTINCT fecha FROM picks WHERE resultado='PENDIENTE'")]
         for f_str in fechas:
@@ -68,9 +131,10 @@ def verificar_resultados():
             if not finales:
                 continue
             for r in c.execute("SELECT * FROM picks WHERE fecha=? AND resultado='PENDIENTE'", (f_str,)).fetchall():
-                if r["game_id"] not in finales:
+                gid = r["game_id"]
+                if gid not in finales:
                     continue
-                sa, sh, tot = finales[r["game_id"]]
+                sa, sh, tot = finales[gid]
                 marc = f"{sa}-{sh} ({tot})"
                 res = "PENDIENTE"
                 if r["mercado"] == "Ganador (P+)":
@@ -81,8 +145,27 @@ def verificar_resultados():
                     res = "GANADA" if tot < r["linea_alt"] else ("PUSH" if tot == r["linea_alt"] else "PERDIDA")
                 elif r["mercado"] == "Total Alt. OVER" and r["linea_alt"] is not None:
                     res = "GANADA" if tot > r["linea_alt"] else ("PUSH" if tot == r["linea_alt"] else "PERDIDA")
-                c.execute("UPDATE picks SET resultado=?, marcador=? WHERE id=?", (res, marc, r["id"]))
-                liquidados += 1
+                elif r["mercado"].startswith("Prop ") and r["linea_alt"] is not None:
+                    if gid not in box_cache:
+                        box_cache[gid] = _boxscore_stats(gid)
+                    # mercado = "Prop ASISTENCIAS · LeBron James"
+                    partes = r["mercado"].split(" · ", 1)
+                    cat = partes[0].replace("Prop ", "").strip()
+                    jug = F.norm(partes[1]) if len(partes) > 1 else ""
+                    st = box_cache[gid].get(jug)
+                    if st is not None:
+                        val = (
+                            st["PTS"] if cat == "PUNTOS" else
+                            st["REB"] if cat == "REBOTES" else
+                            st["AST"] if cat == "ASISTENCIAS" else
+                            st["REB"] + st["AST"] if cat == "R+A" else
+                            st["PTS"] + st["REB"] + st["AST"]
+                        )
+                        marc = f"{val} {cat}"
+                        res = "GANADA" if val > r["linea_alt"] else "PERDIDA"
+                if res != "PENDIENTE":
+                    c.execute("UPDATE picks SET resultado=?, marcador=? WHERE id=?", (res, marc, r["id"]))
+                    liquidados += 1
     return liquidados
 
 
@@ -94,10 +177,49 @@ def resumen():
     pen = sum(1 for r in rows if r["resultado"] == "PENDIENTE")
     decididas = gan + per
     beneficio = sum((r["cuota"] - 1) for r in rows if r["resultado"] == "GANADA") - per
+
+    por_fecha = {}
+    por_mercado = {}
+    brier_sum, brier_n = 0.0, 0
+    for r in rows:
+        d = por_fecha.setdefault(r["fecha"], dict(ganadas=0, perdidas=0, pendientes=0, beneficio_u=0.0))
+        m_key = r["mercado"].split(" · ")[0] if r["mercado"].startswith("Prop ") else r["mercado"]
+        m = por_mercado.setdefault(m_key, dict(mercado=m_key, ganadas=0, perdidas=0, pendientes=0, prob_sum=0.0, dec=0, beneficio_u=0.0))
+        if r["resultado"] == "GANADA":
+            d["ganadas"] += 1
+            d["beneficio_u"] = round(d["beneficio_u"] + (r["cuota"] - 1), 2)
+            m["ganadas"] += 1; m["dec"] += 1; m["prob_sum"] += r["prob_real"]
+            m["beneficio_u"] = round(m["beneficio_u"] + (r["cuota"] - 1), 2)
+            brier_sum += (r["prob_real"] - 1.0) ** 2; brier_n += 1
+        elif r["resultado"] == "PERDIDA":
+            d["perdidas"] += 1
+            d["beneficio_u"] = round(d["beneficio_u"] - 1, 2)
+            m["perdidas"] += 1; m["dec"] += 1; m["prob_sum"] += r["prob_real"]
+            m["beneficio_u"] = round(m["beneficio_u"] - 1, 2)
+            brier_sum += (r["prob_real"] - 0.0) ** 2; brier_n += 1
+        elif r["resultado"] == "PENDIENTE":
+            d["pendientes"] += 1
+            m["pendientes"] += 1
+
+    diag_mercados = []
+    for m in por_mercado.values():
+        dec = m["dec"]
+        ac = round(m["ganadas"] / dec, 4) if dec else None
+        pe = round(m["prob_sum"] / dec, 4) if dec else None
+        diag_mercados.append(dict(
+            mercado=m["mercado"], ganadas=m["ganadas"], perdidas=m["perdidas"], pendientes=m["pendientes"],
+            acierto=ac, prob_esperada=pe, sesgo=round(ac - pe, 4) if (ac is not None and pe is not None) else None,
+            roi=round(m["beneficio_u"] / dec, 4) if dec else None, beneficio_u=m["beneficio_u"],
+        ))
+    diag_mercados.sort(key=lambda x: -(x["ganadas"] + x["perdidas"] + x["pendientes"]))
+
     return dict(
         total=len(rows), ganadas=gan, perdidas=per, pendientes=pen,
         acierto=round(gan / decididas, 4) if decididas else None,
         roi=round(beneficio / decididas, 4) if decididas else None,
         beneficio_u=round(beneficio, 2),
-        picks=rows[:200],
+        brier=round(brier_sum / brier_n, 4) if brier_n else None,
+        por_fecha=por_fecha,
+        por_mercado=diag_mercados,
+        picks=rows[:500],
     )

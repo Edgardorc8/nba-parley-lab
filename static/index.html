@@ -508,9 +508,62 @@ function pintarProps(P) {
       cargar(false);
     }
 
+    let HIST = null, CAL_Y = new Date().getFullYear(), CAL_M = new Date().getMonth(), CAL_SEL = '', HIS_MKT = 'TODOS';
     async function cargarHistorial(verif) {
-      const h = await (await fetch('/api/historial?verificar=' + verif)).json();
+      HIST = await (await fetch('/api/historial?verificar=' + verif)).json();
+      pintarHistorial();
+    }
+
+    function pintarHistorial() {
+      const h = HIST;
+      if (!h) return;
       const cRes = r => r === 'GANADA' ? 'ok' : r === 'PERDIDA' ? 'bad' : 'warn';
+      const pf = h.por_fecha || {};
+      const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      const first = new Date(CAL_Y, CAL_M, 1);
+      const startDay = (first.getDay() + 6) % 7; // Lunes = 0
+      const daysInMonth = new Date(CAL_Y, CAL_M + 1, 0).getDate();
+      let cells = '';
+      for (let i = 0; i < startDay; i++) cells += '<div></div>';
+      for (let d = 1; d <= daysInMonth; d++) {
+        const iso = `${CAL_Y}-${String(CAL_M + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const info = pf[iso];
+        const sel = CAL_SEL === iso;
+        const bg = !info ? '#0b2545' : (info.beneficio_u > 0 ? '#064e3b' : info.beneficio_u < 0 ? '#7f1d1d' : '#1e3a5f');
+        const brd = sel ? '2px solid var(--acc)' : '1px solid #335';
+        cells += `<div onclick="CAL_SEL=(CAL_SEL==='${iso}'?'':'${iso}');pintarHistorial()"
+          style="cursor:pointer;background:${bg};border:${brd};border-radius:8px;padding:6px;min-height:54px;font-size:11.5px">
+          <div style="display:flex;justify-content:space-between"><b>${d}</b>${info ? `<span class="mut">${info.ganadas}G/${info.perdidas}P</span>` : ''}</div>
+          ${info ? `<div style="margin-top:4px;font-weight:700;color:${info.beneficio_u >= 0 ? '#6ee7b7' : '#fca5a5'}">${info.beneficio_u >= 0 ? '+' : ''}${info.beneficio_u}u${info.pendientes ? ` <span class="mut">(${info.pendientes}p)</span>` : ''}</div>` : ''}
+        </div>`;
+      }
+
+      let lista = CAL_SEL ? h.picks.filter(r => r.fecha === CAL_SEL) : h.picks;
+      const mktKey = r => r.mercado.startsWith('Prop ') ? r.mercado.split(' · ')[0] : r.mercado;
+      const mkts = ['TODOS', ...new Set(lista.map(mktKey))];
+      if (HIS_MKT !== 'TODOS') lista = lista.filter(r => mktKey(r) === HIS_MKT);
+
+      const grupos = new Map();
+      lista.forEach(r => {
+        const k = `${r.fecha}|${r.partido}`;
+        if (!grupos.has(k)) grupos.set(k, { fecha: r.fecha, partido: r.partido, items: [] });
+        grupos.get(k).items.push(r);
+      });
+      const bloques = [...grupos.values()].map(gr => {
+        const gCnt = gr.items.filter(x => x.resultado === 'GANADA').length;
+        const pCnt = gr.items.filter(x => x.resultado === 'PERDIDA').length;
+        const penCnt = gr.items.filter(x => x.resultado === 'PENDIENTE').length;
+        return `<details class="card" style="margin-top:8px;padding:11px">
+          <summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:700">
+            <span>🏀 ${gr.partido} <span class="mut" style="margin-left:8px">${gr.fecha} · ${gr.items.length} selecciones</span></span>
+            <span><span class="tag ok">${gCnt}G</span> <span class="tag bad">${pCnt}P</span>${penCnt ? ` <span class="tag warn">${penCnt} Pend</span>` : ''}</span>
+          </summary>
+          <table style="margin-top:8px"><tr><th>Mercado</th><th>Selección</th><th>Cuota</th><th>Prob. Modelo</th><th>Marcador / Stat</th><th>Resultado</th></tr>
+          ${gr.items.map(r => `<tr><td>${r.mercado}</td><td><b>${r.seleccion}</b></td><td>${r.cuota.toFixed(2)}</td>
+            <td>${pct(r.prob_real)}</td><td>${r.marcador || '—'}</td>
+            <td><span class="tag ${cRes(r.resultado)}">${r.resultado}</span></td></tr>`).join('')}</table>
+        </details>`;
+      }).join('');
       $('#historial').innerHTML = `<div class="card hero">
     <h2>📊 Historial & Backtesting Automático <button onclick="cargarHistorial(true)">⟳ Verificar resultados en ESPN</button></h2>
     <div class="kpi">
@@ -520,11 +573,163 @@ function pintarProps(P) {
       <div><span class="mut">% Acierto real</span><b class="pos">${h.acierto != null ? pct(h.acierto) : '—'}</b></div>
       <div><span class="mut">ROI (1u fija)</span><b class="${(h.roi || 0) >= 0 ? 'pos' : 'neg'}">${h.roi != null ? (h.roi * 100).toFixed(1) + '%' : '—'}</b></div>
       <div><span class="mut">Beneficio</span><b>${h.beneficio_u >= 0 ? '+' : ''}${h.beneficio_u} u</b></div>
+      <div><span class="mut">Brier Score</span><b>${h.brier != null ? h.brier.toFixed(3) : '—'}</b></div>
     </div></div>
-    <table style="margin-top:14px"><tr><th>Fecha</th><th>Partido</th><th>Mercado</th><th>Selección</th><th>Cuota</th><th>Prob. Modelo</th><th>Marcador</th><th>Resultado</th></tr>
-    ${h.picks.map(r => `<tr><td>${r.fecha}</td><td><b>${r.partido}</b></td><td>${r.mercado}</td><td>${r.seleccion}</td>
-      <td>${r.cuota.toFixed(2)}</td><td>${pct(r.prob_real)}</td><td>${r.marcador || '—'}</td>
-      <td><span class="tag ${cRes(r.resultado)}">${r.resultado}</span></td></tr>`).join('')}</table>`;
+
+    ${(h.por_mercado || []).length ? `<div class="card" style="margin-top:14px">
+      <h3>🔬 Diagnóstico del Modelo por Mercado (Calibración: Prob. Esperada vs. Acierto Real)</h3>
+      <table><tr><th>Mercado</th><th>G / P / Pend.</th><th>Prob. Modelo</th><th>% Acierto Real</th><th>Sesgo</th><th>ROI</th><th>Beneficio</th></tr>
+      ${h.por_mercado.map(m => `<tr><td><b>${m.mercado}</b></td><td>${m.ganadas} / ${m.perdidas} / ${m.pendientes}</td>
+        <td>${m.prob_esperada != null ? pct(m.prob_esperada) : '—'}</td>
+        <td><b>${m.acierto != null ? pct(m.acierto) : '—'}</b></td>
+        <td class="${(m.sesgo || 0) >= 0 ? 'pos' : 'neg'}">${m.sesgo != null ? (m.sesgo >= 0 ? '+' : '') + (m.sesgo * 100).toFixed(1) + '%' : '—'}</td>
+        <td class="${(m.roi || 0) >= 0 ? 'pos' : 'neg'}">${m.roi != null ? (m.roi * 100).toFixed(1) + '%' : '—'}</td>
+        <td>${m.beneficio_u >= 0 ? '+' : ''}${m.beneficio_u} u</td></tr>`).join('')}</table>
+    </div>` : ''}
+
+    <div class="card" style="margin-top:14px">
+      <h3>
+        <span>📅 Calendario — ${meses[CAL_M]} ${CAL_Y} ${CAL_SEL ? `<span class="tag ok" style="margin-left:8px">Filtrado: ${CAL_SEL}</span>` : ''}</span>
+        <span style="display:flex;gap:6px">
+          ${CAL_SEL ? `<button onclick="CAL_SEL='';pintarHistorial()">Ver todos</button>` : ''}
+          <button onclick="CAL_M--;if(CAL_M<0){CAL_M=11;CAL_Y--;}pintarHistorial()">◀</button>
+          <button onclick="CAL_M++;if(CAL_M>11){CAL_M=0;CAL_Y++;}pintarHistorial()">▶</button>
+        </span>
+      </h3>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center;margin-bottom:6px" class="mut">
+        <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cells}</div>
+    </div>
+
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">${mkts.map(m => `<button class="${HIS_MKT === m ? 'on' : ''}" style="${HIS_MKT === m ? 'background:var(--acc);color:#000;font-weight:700' : ''}" onclick="HIS_MKT='${m}';pintarHistorial()">${m}</button>`).join('')}</div>
+    ${bloques || '<p class="mut" style="margin-top:12px">Sin registros para este filtro.</p>'}`;
+    }
+
+    let PATAS_TEMP = [];
+    async function cargarBoletos() {
+      const desde = $('#b-desde')?.value || '';
+      const hasta = $('#b-hasta')?.value || '';
+      const autor = $('#b-fautor')?.value || 'TODOS';
+      const qs = new URLSearchParams();
+      if (desde) qs.set('desde', desde);
+      if (hasta) qs.set('hasta', hasta);
+      if (autor && autor !== 'TODOS') qs.set('autor', autor);
+      const data = await (await fetch('/api/boletos?' + qs.toString())).json();
+      const r = data.resumen;
+      const cRes = e => e === 'GANADA' ? 'ok' : e === 'PERDIDA' ? 'bad' : 'warn';
+
+      $('#boletos').innerHTML = `
+        <div class="card hero">
+          <h2>📒 Mis Boletos Reales & Rendimiento por Autor</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center">
+            <label class="mut">Desde <input type="date" id="b-desde" value="${desde}" onchange="cargarBoletos()"></label>
+            <label class="mut">Hasta <input type="date" id="b-hasta" value="${hasta}" onchange="cargarBoletos()"></label>
+            <label class="mut">Autor
+              <select id="b-fautor" onchange="cargarBoletos()" style="background:#0b2545;color:var(--txt);border:1px solid #335;border-radius:8px;padding:6px 10px">
+                <option value="TODOS">Todos</option>
+                ${(data.autores || []).map(a => `<option value="${a}" ${a === autor ? 'selected' : ''}>${a}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <div class="kpi">
+            <div><span class="mut">Boletos</span><b>${r.total}</b></div>
+            <div><span class="mut">G / P / Pend.</span><b>${r.ganadas} / ${r.perdidas} / ${r.pendientes}</b></div>
+            <div><span class="mut">% Acierto</span><b class="pos">${r.acierto != null ? pct(r.acierto) : '—'}</b></div>
+            <div><span class="mut">Beneficio Neto</span><b class="${r.beneficio >= 0 ? 'pos' : 'neg'}">${r.beneficio >= 0 ? '+' : ''}$${r.beneficio.toFixed(2)}</b></div>
+            <div><span class="mut">ROI</span><b class="${(r.roi || 0) >= 0 ? 'pos' : 'neg'}">${r.roi != null ? (r.roi * 100).toFixed(1) + '%' : '—'}</b></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h3>➕ Registrar Boleto / Parley (incluye Player Props)</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <input type="date" id="nb-fecha" value="${fecha.value}">
+            <input id="nb-autor" placeholder="Autor (ej: Propio, Modelo)" value="Propio" style="width:150px">
+            <input id="nb-casa" placeholder="Casa" value="TriunfoBet" style="width:120px">
+            <input id="nb-stake" type="number" step="0.5" placeholder="Stake $" value="10" style="width:95px">
+            <input id="nb-cuota" type="number" step="0.01" placeholder="Cuota total" style="width:110px">
+            <select id="nb-estado" style="background:#0b2545;color:var(--txt);border:1px solid #335;border-radius:8px;padding:6px 10px">
+              <option value="PENDIENTE">PENDIENTE</option><option value="GANADA">GANADA</option><option value="PERDIDA">PERDIDA</option><option value="PUSH">PUSH</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+            <input id="np-partido" placeholder="Partido (ej: LAL @ PHI)" style="width:140px">
+            <select id="np-mercado" style="background:#0b2545;color:var(--txt);border:1px solid #335;border-radius:8px;padding:6px 10px">
+              <option>ML</option><option>Total O/U</option><option>Player Prop - Asistencias</option><option>Player Prop - Puntos</option><option>Player Prop - Rebotes</option><option>Spread / Hándicap</option>
+            </select>
+            <input id="np-jugador" placeholder="Jugador (opcional)" style="width:145px">
+            <input id="np-sel" placeholder="Selección (ej: Over 244.5 / LeBron 6.5+ AST)" style="width:240px">
+            <input id="np-cuota" type="number" step="0.01" placeholder="Cuota pata" value="1.50" style="width:95px">
+            <button onclick="agregarPata()">+ Añadir pata</button>
+          </div>
+          <div id="lista-patas" class="mut" style="margin-bottom:8px">${PATAS_TEMP.length ? PATAS_TEMP.map((p,i)=>`<span class="tag ok" style="margin-right:6px">${p.partido} · ${p.mercado}: ${p.seleccion} (@${p.cuota}) <a href="#" onclick="PATAS_TEMP.splice(${i},1);cargarBoletos();return false" style="color:#fff">✕</a></span>`).join('') : 'Añade 1 o más patas (ej: ML + Over 244.5 + Asistencias LeBron) y guarda el boleto.'}</div>
+          <button onclick="guardarBoleto()" style="background:var(--ok);color:#000;font-weight:700">💾 Guardar Boleto</button>
+        </div>
+
+        ${(data.por_autor || []).length ? `<div class="card" style="margin-top:14px">
+          <h3>👤 Comparativa por Autor</h3>
+          <table><tr><th>Autor</th><th>Boletos</th><th>G / P</th><th>% Acierto</th><th>Stake</th><th>Beneficio</th><th>ROI</th></tr>
+          ${data.por_autor.map(a => `<tr><td><b>${a.autor}</b></td><td>${a.total}</td><td>${a.ganadas} / ${a.perdidas}</td>
+            <td>${a.acierto != null ? pct(a.acierto) : '—'}</td><td>$${a.stake_jugado.toFixed(2)}</td>
+            <td class="${a.beneficio >= 0 ? 'pos' : 'neg'}">${a.beneficio >= 0 ? '+' : ''}$${a.beneficio.toFixed(2)}</td>
+            <td class="${(a.roi || 0) >= 0 ? 'pos' : 'neg'}">${a.roi != null ? (a.roi * 100).toFixed(1) + '%' : '—'}</td></tr>`).join('')}
+          </table></div>` : ''}
+
+        <div class="card" style="margin-top:14px">
+          <h3>🎟️ Boletos Registrados (${data.boletos.length})</h3>
+          <table><tr><th>Fecha</th><th>Autor</th><th>Tipo</th><th>Patas / Selecciones</th><th>Stake</th><th>Cuota</th><th>Beneficio</th><th>Estado</th><th>Acciones</th></tr>
+          ${data.boletos.map(b => `<tr>
+            <td>${b.fecha}</td><td><b>${b.autor}</b></td><td>${b.tipo}</td>
+            <td>${b.patas.map(p => `<div><b>${p.partido}</b> · ${p.mercado}${p.jugador ? ' ('+p.jugador+')' : ''}: ${p.seleccion}</div>`).join('')}</td>
+            <td>$${b.stake.toFixed(2)}</td><td>${b.cuota_total.toFixed(2)}</td>
+            <td class="${b.beneficio_neto >= 0 ? 'pos' : 'neg'}">${b.beneficio_neto >= 0 ? '+' : ''}$${b.beneficio_neto.toFixed(2)}</td>
+            <td><span class="tag ${cRes(b.estado)}">${b.estado}</span></td>
+            <td>
+              <button onclick="estadoBoleto(${b.id},'GANADA')" title="Ganada">✓</button>
+              <button onclick="estadoBoleto(${b.id},'PERDIDA')" title="Perdida">✕</button>
+              <button onclick="borrarBoleto(${b.id})" title="Eliminar">🗑</button>
+            </td></tr>`).join('')}</table>
+        </div>`;
+    }
+
+    function agregarPata() {
+      const sel = $('#np-sel').value.trim();
+      if (!sel) return;
+      PATAS_TEMP.push({
+        partido: $('#np-partido').value.trim() || 'NBA',
+        mercado: $('#np-mercado').value,
+        jugador: $('#np-jugador').value.trim(),
+        seleccion: sel,
+        cuota: parseFloat($('#np-cuota').value) || 1.0,
+      });
+      cargarBoletos();
+    }
+
+    async function guardarBoleto() {
+      if (!PATAS_TEMP.length) { alert('Añade al menos una pata primero.'); return; }
+      const body = {
+        fecha: $('#nb-fecha').value,
+        autor: $('#nb-autor').value.trim() || 'Propio',
+        casa: $('#nb-casa').value.trim() || 'TriunfoBet',
+        stake: parseFloat($('#nb-stake').value) || 1.0,
+        cuota_total: parseFloat($('#nb-cuota').value) || 0,
+        estado: $('#nb-estado').value,
+        patas: PATAS_TEMP,
+      };
+      await fetch('/api/boletos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      PATAS_TEMP = [];
+      cargarBoletos();
+    }
+
+    async function estadoBoleto(id, estado) {
+      await fetch('/api/boletos/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado }) });
+      cargarBoletos();
+    }
+
+    async function borrarBoleto(id) {
+      await fetch('/api/boletos/' + id, { method: 'DELETE' });
+      cargarBoletos();
     }
     cargar(false);
     setInterval(() => cargar(false), 30 * 60e3);

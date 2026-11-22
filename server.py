@@ -8,6 +8,9 @@ import uvicorn
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
+
 import fuentes as F
 import historial as H
 import main as P
