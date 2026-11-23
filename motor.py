@@ -150,12 +150,14 @@ def evaluar_lado(g, proy, cuotas_casa):
                 prob_novig=prob_novig, vig=vig)
 
 
-def estado(tipo, linea_mercado, gtd, cuota, cuota_est=False, disc=None):
+def estado(tipo, linea_mercado, gtd, cuota, cuota_est=False, disc=None, prob=None):
     st = []
     if disc:
         st.append(disc)
     if tipo == "over" and linea_mercado is not None and linea_mercado <= LOW_LINE:
         st.append("BLOQUEADO POR LÍNEA BAJA <= 225.5")
+    if tipo == "over" and prob is not None and prob < 0.68:
+        st.append(f"AVISO OVER prob < 68% ({prob*100:.1f}%)")
     if gtd:
         st.append("EN CUARENTENA GTD (" + ", ".join(x["jugador"] for x in gtd[:4]) + ")")
     if cuota and not (ODDS_MIN <= cuota <= ODDS_MAX):
@@ -167,8 +169,8 @@ def bloqueado(s):
     return "BLOQUEADO" in s or "CUARENTENA" in s
 
 
-def sugerir_props(g, proy, mins, out_lst, gtd_lst, lg):
-    """Player Props protegidos en 5 categorías (Puntos, Rebotes, Asistencias, R+A, PRA) con Filtro Anti-Garbage Time."""
+def sugerir_props(g, proy, mins, out_lst, gtd_lst, lg, sh=None, sa=None):
+    """Player Props protegidos en 5 categorías con ajuste defensivo rival (DRtg) y sigmas calibrados."""
     from math import floor
     from fuentes import ESPN_TO_BBREF_ABBR, norm
     spread = abs(g["dk"].get("spread_home") or 0)
@@ -179,10 +181,14 @@ def sugerir_props(g, proy, mins, out_lst, gtd_lst, lg):
     for side in ("home", "away"):
         abbr_espn = g[side]["abbr"]
         abbr_bb = ESPN_TO_BBREF_ABBR.get(abbr_espn, abbr_espn)
+        opp_st = sa if side == "home" else sh
+        def_f = (opp_st["drtg"] / lg["ortg"]) if (opp_st and lg.get("ortg")) else 1.0
+        def_f = max(0.88, min(1.12, def_f))
         for n, p in mins.items():
             if p["equipo"] != abbr_bb or n in fuera or p["mpg"] < 28.0:
                 continue
-            ppg, rpg, apg = p["ppg"] * pace_f, p["rpg"] * pace_f, p["apg"] * pace_f
+            ppg = p["ppg"] * pace_f * def_f
+            rpg, apg = p["rpg"] * pace_f, p["apg"] * pace_f
             ra, pra = rpg + apg, ppg + rpg + apg
             base = dict(partido=g["partido"], hora=g["hora"], equipo=abbr_espn, jugador=p["nombre"],
                         cuota=1.55, cuarentena=bool(gtd_lst))
@@ -204,15 +210,15 @@ def sugerir_props(g, proy, mins, out_lst, gtd_lst, lg):
                 candidatos.append(dict(base, cat="R+A", prop=f"Over {ln} Reb + Ast",
                                        promedio=f"{p['rpg']+p['apg']:.1f} R+A ({p['mpg']:.1f}m)", prob=round(pr, 4), filtro=f_txt))
             if not garbage_risk:
-                if ppg >= 18.0:
-                    ln = floor(ppg - 2.5) + 0.5
-                    pr = N.cdf((ppg - ln) / 6.5)
+                if ppg >= 19.0:
+                    ln = floor(ppg - 3.5) + 0.5
+                    pr = N.cdf((ppg - ln) / 8.2)
                     candidatos.append(dict(base, cat="PUNTOS", prop=f"Over {ln} Puntos",
-                                           promedio=f"{p['ppg']:.1f} PPG ({p['mpg']:.1f}m)", prob=round(pr, 4), filtro=f_txt))
-                if pra >= 28.0:
-                    ln = floor(pra - 3.0) + 0.5
-                    pr = N.cdf((pra - ln) / 8.0)
+                                           promedio=f"{p['ppg']:.1f} PPG · def×{def_f:.2f}", prob=round(pr, 4), filtro=f_txt))
+                if pra >= 30.0:
+                    ln = floor(pra - 4.0) + 0.5
+                    pr = N.cdf((pra - ln) / 9.5)
                     candidatos.append(dict(base, cat="PRA", prop=f"Over {ln} PRA",
-                                           promedio=f"{p['ppg']+p['rpg']+p['apg']:.1f} PRA ({p['mpg']:.1f}m)", prob=round(pr, 4), filtro=f_txt))
+                                           promedio=f"{p['ppg']+p['rpg']+p['apg']:.1f} PRA · def×{def_f:.2f}", prob=round(pr, 4), filtro=f_txt))
     candidatos.sort(key=lambda x: -x["prob"])
     return candidatos

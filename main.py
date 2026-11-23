@@ -106,7 +106,7 @@ def analizar(fecha, log=print):
             l_manual = cc.get(f"{tipo}_linea") if c_manual else None  # Fix: no congelar línea vieja del CSV
             r = M.evaluar_total(tipo, linea, proy, sh, sa, lg, c_manual, l_manual)
             r.update(tipo=f"Total Alt. {tipo.upper()}",
-                     estado=M.estado(tipo, linea, gtd, r["cuota"], r["cuota_est"], disc=alerta_total))
+                     estado=M.estado(tipo, linea, gtd, r["cuota"], r["cuota_est"], disc=alerta_total, prob=r["prob"]))
             sel.append(r)
 
         # Fase D: Alertas de movimiento brusco de línea (Steam Moves >= 1.5 pts)
@@ -117,7 +117,7 @@ def analizar(fecha, log=print):
         if s_open is not None and spread is not None and abs(spread - s_open) >= 1.5:
             steam.append(f"⚡ STEAM Spread {spread - s_open:+.1f} pts ({s_open}→{spread})")
 
-        props = M.sugerir_props(g, proy, mins, oh + oa, gtd, lg)
+        props = M.sugerir_props(g, proy, mins, oh + oa, gtd, lg, sh=sh, sa=sa)
         analisis.append(dict(g=g, sh=sh, sa=sa, l5h=l5h, l5a=l5a, out=oh + oa, gtd=gtd, gtd_menor=mh + ma,
                              proy=proy, sel=sel, props=props, casa=cc, cuarentena=bool(gtd),
                              disc_margen=disc_m, disc_total=disc_t, steam=steam,
