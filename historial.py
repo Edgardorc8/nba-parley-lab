@@ -2,6 +2,7 @@
 import datetime as dt
 import math
 import re
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -9,6 +10,21 @@ import fuentes as F
 import motor as M
 
 DB = Path(__file__).parent / "historial.db"
+BACKUPS = Path(__file__).parent / "backups"
+MODEL_VERSION = "nba_v2_drtg"
+
+
+def _backup_diario(fecha):
+    """Copia de seguridad automática diaria de historial.db (mantiene últimos 14 días)."""
+    if not DB.exists():
+        return
+    BACKUPS.mkdir(exist_ok=True)
+    dst = BACKUPS / f"historial_{fecha:%Y%m%d}.db"
+    if not dst.exists():
+        shutil.copy2(DB, dst)
+        viejos = sorted(BACKUPS.glob("historial_*.db"))[:-14]
+        for v in viejos:
+            v.unlink(missing_ok=True)
 
 
 def _conn():
@@ -21,8 +37,20 @@ def _conn():
         mercado TEXT, seleccion TEXT, cuota REAL, prob_real REAL,
         linea_alt REAL, home_nombre TEXT, away_nombre TEXT,
         estado TEXT, resultado TEXT DEFAULT 'PENDIENTE', marcador TEXT DEFAULT '',
+        model_version TEXT DEFAULT 'v1',
         UNIQUE(fecha, game_id, mercado)
     )""")
+    # Migración segura si la tabla ya existía sin model_version
+    cols = {r[1] for r in c.execute("PRAGMA table_info(picks)").fetchall()}
+    if "model_version" not in cols:
+        c.execute("ALTER TABLE picks ADD COLUMN model_version TEXT DEFAULT 'v1'")
+    c.execute("""CREATE TABLE IF NOT EXISTS odds_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT, game_id TEXT, partido TEXT, captured_at TEXT,
+        ml_home REAL, ml_away REAL, total_line REAL, spread_home REAL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_picks_fecha ON picks(fecha)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_odds_game ON odds_snapshots(game_id)")
     return c
 
 
@@ -32,25 +60,34 @@ def _linea_de(texto):
 
 
 def registrar_jornada(fecha, partidos):
-    """Guarda automáticamente todas las selecciones elegibles del día (Partidos + Player Props)."""
+    """Guarda automáticamente todas las selecciones elegibles del día (Partidos + Player Props) y snapshot de cuotas."""
+    _backup_diario(fecha)
+    ahora = dt.datetime.now(F.VET).isoformat(timespec="seconds")
     with _conn() as c:
         for a in partidos:
             g = a["g"]
+            dk = g.get("dk") or {}
+            if dk.get("total") is not None:
+                c.execute("""INSERT INTO odds_snapshots
+                    (fecha, game_id, partido, captured_at, ml_home, ml_away, total_line, spread_home)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (str(fecha), g["id"], g["partido"], ahora, dk.get("ml_home"), dk.get("ml_away"),
+                     dk.get("total"), dk.get("spread_home")))
             for s in a["sel"]:
                 if M.bloqueado(s["estado"]):
                     continue
                 c.execute("""INSERT INTO picks
                     (fecha, game_id, partido, hora, mercado, seleccion, cuota, prob_real,
-                     linea_alt, home_nombre, away_nombre, estado)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                     linea_alt, home_nombre, away_nombre, estado, model_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(fecha, game_id, mercado) DO UPDATE SET
                       seleccion=excluded.seleccion, cuota=excluded.cuota,
                       prob_real=excluded.prob_real, linea_alt=excluded.linea_alt,
-                      estado=excluded.estado
+                      estado=excluded.estado, model_version=excluded.model_version
                     WHERE resultado='PENDIENTE'""",
                     (str(fecha), g["id"], g["partido"], g["hora"], s["tipo"], s["seleccion"],
                      s["cuota"], s["prob"], s.get("linea_alt"), g["home"]["nombre"],
-                     g["away"]["nombre"], s["estado"]))
+                     g["away"]["nombre"], s["estado"], MODEL_VERSION))
 
             # Guardar también los Player Props sugeridos (Puntos, Rebotes, Asistencias, R+A, PRA)
             for p in a.get("props", []):
@@ -61,15 +98,16 @@ def registrar_jornada(fecha, partidos):
                 linea = _linea_de(p["prop"])
                 c.execute("""INSERT INTO picks
                     (fecha, game_id, partido, hora, mercado, seleccion, cuota, prob_real,
-                     linea_alt, home_nombre, away_nombre, estado)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                     linea_alt, home_nombre, away_nombre, estado, model_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(fecha, game_id, mercado) DO UPDATE SET
                       seleccion=excluded.seleccion, cuota=excluded.cuota,
-                      prob_real=excluded.prob_real, linea_alt=excluded.linea_alt
+                      prob_real=excluded.prob_real, linea_alt=excluded.linea_alt,
+                      model_version=excluded.model_version
                     WHERE resultado='PENDIENTE'""",
                     (str(fecha), g["id"], g["partido"], g["hora"], mercado, seleccion,
                      p["cuota"], p["prob"], linea, g["home"]["nombre"],
-                     g["away"]["nombre"], "LUZ VERDE"))
+                     g["away"]["nombre"], "LUZ VERDE", MODEL_VERSION))
 
 
 def _boxscore_stats(game_id):
