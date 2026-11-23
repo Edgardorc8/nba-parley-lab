@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8">
   <title>NBA Parley Lab</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -605,7 +606,23 @@ function pintarProps(P) {
     </div>
 
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px">${mkts.map(m => `<button class="${HIS_MKT === m ? 'on' : ''}" style="${HIS_MKT === m ? 'background:var(--acc);color:#000;font-weight:700' : ''}" onclick="HIS_MKT='${m}';pintarHistorial()">${m}</button>`).join('')}</div>
+    <div class="card" style="margin-top:14px"><h3>📈 Curva de Unidades Acumuladas (Equity Curve)</h3><canvas id="eq-chart" height="70"></canvas></div>
     ${bloques || '<p class="mut" style="margin-top:12px">Sin registros para este filtro.</p>'}`;
+      if (window.Chart && $('#eq-chart')) {
+        let ac = 0; const pts = [], lbs = [];
+        [...h.picks].reverse().forEach((r, idx) => {
+          if (r.resultado === 'GANADA') ac += (r.cuota - 1);
+          else if (r.resultado === 'PERDIDA') ac -= 1;
+          else return;
+          lbs.push(`#${idx + 1} ${r.fecha.slice(5)}`);
+          pts.push(+ac.toFixed(2));
+        });
+        new Chart($('#eq-chart'), {
+          type: 'line',
+          data: { labels: lbs, datasets: [{ label: 'Unidades (u)', data: pts, borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.12)', fill: true, tension: 0.25, pointRadius: 2 }] },
+          options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8', maxTicksLimit: 10 } }, y: { ticks: { color: '#94a3b8' } } } }
+        });
+      }
     }
 
     let PATAS_TEMP = [];

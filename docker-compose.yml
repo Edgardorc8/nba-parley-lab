@@ -1,0 +1,15 @@
+services:
+  nba-parley-lab:
+    build: .
+    container_name: nba-parley-lab
+    ports:
+      - "8000:8000"
+    environment:
+      - TZ=America/Caracas
+    volumes:
+      - ./historial.db:/app/historial.db
+      - ./cache:/app/cache
+      - ./reportes:/app/reportes
+      - ./entrada:/app/entrada
+      - ./backups:/app/backups
+    restart: unless-stopped
