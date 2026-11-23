@@ -1,5 +1,6 @@
 """Historial y Backtesting automático en SQLite (Partidos + Player Props verificados vía Boxscore ESPN)."""
 import datetime as dt
+import math
 import re
 import sqlite3
 from pathlib import Path
@@ -180,34 +181,47 @@ def resumen():
 
     por_fecha = {}
     por_mercado = {}
-    brier_sum, brier_n = 0.0, 0
+    brier_sum, logloss_sum, brier_n = 0.0, 0.0, 0
     for r in rows:
         d = por_fecha.setdefault(r["fecha"], dict(ganadas=0, perdidas=0, pendientes=0, beneficio_u=0.0))
         m_key = r["mercado"].split(" · ")[0] if r["mercado"].startswith("Prop ") else r["mercado"]
         m = por_mercado.setdefault(m_key, dict(mercado=m_key, ganadas=0, perdidas=0, pendientes=0, prob_sum=0.0, dec=0, beneficio_u=0.0))
+        p_cl = max(0.01, min(0.99, float(r["prob_real"] or 0.5)))
         if r["resultado"] == "GANADA":
             d["ganadas"] += 1
             d["beneficio_u"] = round(d["beneficio_u"] + (r["cuota"] - 1), 2)
-            m["ganadas"] += 1; m["dec"] += 1; m["prob_sum"] += r["prob_real"]
+            m["ganadas"] += 1; m["dec"] += 1; m["prob_sum"] += p_cl
             m["beneficio_u"] = round(m["beneficio_u"] + (r["cuota"] - 1), 2)
-            brier_sum += (r["prob_real"] - 1.0) ** 2; brier_n += 1
+            brier_sum += (p_cl - 1.0) ** 2; logloss_sum += -math.log(p_cl); brier_n += 1
         elif r["resultado"] == "PERDIDA":
             d["perdidas"] += 1
             d["beneficio_u"] = round(d["beneficio_u"] - 1, 2)
-            m["perdidas"] += 1; m["dec"] += 1; m["prob_sum"] += r["prob_real"]
+            m["perdidas"] += 1; m["dec"] += 1; m["prob_sum"] += p_cl
             m["beneficio_u"] = round(m["beneficio_u"] - 1, 2)
-            brier_sum += (r["prob_real"] - 0.0) ** 2; brier_n += 1
+            brier_sum += (p_cl - 0.0) ** 2; logloss_sum += -math.log(1.0 - p_cl); brier_n += 1
         elif r["resultado"] == "PENDIENTE":
             d["pendientes"] += 1
             m["pendientes"] += 1
+
+    # Drawdown máximo histórico (en unidades, orden cronológico)
+    eq, peak, max_dd = 0.0, 0.0, 0.0
+    for r in reversed(rows):
+        if r["resultado"] == "GANADA":
+            eq += (r["cuota"] - 1)
+        elif r["resultado"] == "PERDIDA":
+            eq -= 1.0
+        peak = max(peak, eq)
+        max_dd = max(max_dd, peak - eq)
 
     diag_mercados = []
     for m in por_mercado.values():
         dec = m["dec"]
         ac = round(m["ganadas"] / dec, 4) if dec else None
         pe = round(m["prob_sum"] / dec, 4) if dec else None
+        muestra = "Confiable (100+)" if dec >= 100 else ("Tendencia (30-99)" if dec >= 30 else f"Muestra baja ({dec})")
         diag_mercados.append(dict(
             mercado=m["mercado"], ganadas=m["ganadas"], perdidas=m["perdidas"], pendientes=m["pendientes"],
+            dec=dec, muestra=muestra,
             acierto=ac, prob_esperada=pe, sesgo=round(ac - pe, 4) if (ac is not None and pe is not None) else None,
             roi=round(m["beneficio_u"] / dec, 4) if dec else None, beneficio_u=m["beneficio_u"],
         ))
@@ -218,7 +232,9 @@ def resumen():
         acierto=round(gan / decididas, 4) if decididas else None,
         roi=round(beneficio / decididas, 4) if decididas else None,
         beneficio_u=round(beneficio, 2),
+        max_dd_u=round(max_dd, 2),
         brier=round(brier_sum / brier_n, 4) if brier_n else None,
+        log_loss=round(logloss_sum / brier_n, 4) if brier_n else None,
         por_fecha=por_fecha,
         por_mercado=diag_mercados,
         picks=rows[:500],

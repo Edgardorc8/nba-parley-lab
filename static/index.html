@@ -573,18 +573,20 @@ function pintarProps(P) {
       <div><span class="mut">% Acierto real</span><b class="pos">${h.acierto != null ? pct(h.acierto) : '—'}</b></div>
       <div><span class="mut">ROI (1u fija)</span><b class="${(h.roi || 0) >= 0 ? 'pos' : 'neg'}">${h.roi != null ? (h.roi * 100).toFixed(1) + '%' : '—'}</b></div>
       <div><span class="mut">Beneficio</span><b>${h.beneficio_u >= 0 ? '+' : ''}${h.beneficio_u} u</b></div>
-      <div><span class="mut">Brier Score</span><b>${h.brier != null ? h.brier.toFixed(3) : '—'}</b></div>
+      <div><span class="mut">Max Drawdown</span><b class="neg">-${(h.max_dd_u || 0).toFixed(2)} u</b></div>
+      <div><span class="mut">Brier / Log-Loss</span><b>${h.brier != null ? h.brier.toFixed(3) : '—'} / ${h.log_loss != null ? h.log_loss.toFixed(3) : '—'}</b></div>
     </div></div>
 
     ${(h.por_mercado || []).length ? `<div class="card" style="margin-top:14px">
       <h3>🔬 Diagnóstico del Modelo por Mercado (Calibración: Prob. Esperada vs. Acierto Real)</h3>
-      <table><tr><th>Mercado</th><th>G / P / Pend.</th><th>Prob. Modelo</th><th>% Acierto Real</th><th>Sesgo</th><th>ROI</th><th>Beneficio</th></tr>
+      <table><tr><th>Mercado</th><th>G / P / Pend.</th><th>Prob. Modelo</th><th>% Acierto Real</th><th>Sesgo</th><th>ROI</th><th>Beneficio</th><th>Muestra</th></tr>
       ${h.por_mercado.map(m => `<tr><td><b>${m.mercado}</b></td><td>${m.ganadas} / ${m.perdidas} / ${m.pendientes}</td>
         <td>${m.prob_esperada != null ? pct(m.prob_esperada) : '—'}</td>
         <td><b>${m.acierto != null ? pct(m.acierto) : '—'}</b></td>
         <td class="${(m.sesgo || 0) >= 0 ? 'pos' : 'neg'}">${m.sesgo != null ? (m.sesgo >= 0 ? '+' : '') + (m.sesgo * 100).toFixed(1) + '%' : '—'}</td>
         <td class="${(m.roi || 0) >= 0 ? 'pos' : 'neg'}">${m.roi != null ? (m.roi * 100).toFixed(1) + '%' : '—'}</td>
-        <td>${m.beneficio_u >= 0 ? '+' : ''}${m.beneficio_u} u</td></tr>`).join('')}</table>
+        <td>${m.beneficio_u >= 0 ? '+' : ''}${m.beneficio_u} u</td>
+        <td><span class="tag ${(m.dec || 0) >= 100 ? 'ok' : (m.dec || 0) >= 30 ? 'warn' : 'bad'}">${m.muestra || m.dec || 0}</span></td></tr>`).join('')}</table>
     </div>` : ''}
 
     <div class="card" style="margin-top:14px">
